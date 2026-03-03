@@ -30,10 +30,24 @@ class DesktopPhysics:
         y = max(r.top(), min(y, r.bottom() - self._pet_size + 1))
         return x, y
 
-    def apply_gravity(self, x: int, y: int) -> tuple[int, int, bool]:
-        """Returns (new_x, new_y, on_ground)."""
-        if not self._gravity_enabled:
-            return x, y, True
+    def screen_bounds(self) -> tuple[int, int, int, int]:
+        """Return (left, top, right, bottom) for the pet's usable area."""
+        r = self.available_rect()
+        return (
+            r.left(),
+            r.top(),
+            r.right() - self._pet_size + 1,
+            r.bottom() - self._pet_size + 1,
+        )
+
+    def apply_gravity(self, x: int, y: int, is_moving: bool = False) -> tuple[int, int, bool]:
+        """Returns (new_x, new_y, on_ground).
+
+        Gravity is suppressed while the pet is actively moving (walking/wandering).
+        """
+        if not self._gravity_enabled or is_moving:
+            self._velocity_y = 0.0
+            return x, y, (y >= self.ground_y)
 
         ground = self.ground_y
         if y >= ground:

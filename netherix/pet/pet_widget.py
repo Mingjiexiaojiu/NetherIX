@@ -1,13 +1,21 @@
 """Transparent frameless pet widget that renders the sprite on the desktop."""
 
+import random
+
 from PySide6.QtCore import QPoint, Qt, QTimer, Signal
 from PySide6.QtGui import QMouseEvent, QPainter
-from PySide6.QtWidgets import QApplication, QMenu, QWidget
+from PySide6.QtWidgets import QMenu, QWidget
 from loguru import logger
 
 from netherix.pet.behavior import BehaviorController
 from netherix.pet.physics import DesktopPhysics
 from netherix.pet.sprite_engine import PetState, SpriteEngine
+
+_MOVING_STATES = {
+    PetState.WALK_LEFT, PetState.WALK_RIGHT, PetState.WANDER,
+}
+
+_GRAVITY_SUPPRESSED = set(PetState)
 
 
 class PetWidget(QWidget):
@@ -15,6 +23,8 @@ class PetWidget(QWidget):
 
     message_requested = Signal(str)
     double_clicked = Signal()
+    position_changed = Signal(QPoint)
+    action_triggered = Signal()
 
     def __init__(
         self,
@@ -50,7 +60,6 @@ class PetWidget(QWidget):
         self._dragging = False
         self._drag_offset = QPoint()
 
-        # Place at bottom-right of screen
         rect = self._physics.available_rect()
         start_x = rect.right() - size - 100
         start_y = self._physics.ground_y
@@ -84,24 +93,24 @@ class PetWidget(QWidget):
             return
 
         pos = self.pos()
-        rect = self._physics.available_rect()
+        sl, st, sr, sb = self._physics.screen_bounds()
 
-        state, dx = self._behavior.tick(
-            pos.x(),
-            rect.left(),
-            rect.right() - self._size,
+        state, dx, dy = self._behavior.tick(
+            pos.x(), pos.y(), sl, st, sr, sb,
         )
         self._sprite.set_state(state)
 
         new_x = pos.x() + dx
-        new_y = pos.y()
+        new_y = pos.y() + dy
 
-        new_x, new_y, _ = self._physics.apply_gravity(new_x, new_y)
+        suppress_gravity = state in _GRAVITY_SUPPRESSED
+        new_x, new_y, _ = self._physics.apply_gravity(new_x, new_y, is_moving=suppress_gravity)
         new_x, new_y = self._physics.clamp_position(new_x, new_y)
 
         self.move(new_x, new_y)
         self._sprite.advance_frame()
         self.update()
+        self.position_changed.emit(QPoint(new_x + self._size // 2, new_y))
 
     def paintEvent(self, event):
         p = QPainter(self)
@@ -111,7 +120,7 @@ class PetWidget(QWidget):
             p.drawPixmap(0, 0, frame)
         p.end()
 
-    # --- Mouse interaction ---
+    # ── Mouse interaction ──
 
     def mousePressEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -124,6 +133,9 @@ class PetWidget(QWidget):
         if self._dragging:
             new_pos = event.globalPosition().toPoint() - self._drag_offset
             self.move(new_pos)
+            self.position_changed.emit(
+                QPoint(new_pos.x() + self._size // 2, new_pos.y())
+            )
 
     def mouseReleaseEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -131,6 +143,7 @@ class PetWidget(QWidget):
             self._behavior.notify_interaction()
             self._behavior.release_force()
             self._sprite.set_state(PetState.IDLE)
+            self._start_random_walk()
 
     def mouseDoubleClickEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -143,20 +156,51 @@ class PetWidget(QWidget):
             "QMenu { background: #2b2040; color: #e0d0f0; border: 1px solid #5a3d7a; }"
             "QMenu::item:selected { background: #5a3d7a; }"
         )
-        menu.addAction("召唤 NIX", self.double_clicked.emit)
+        menu.addAction("对话", self.double_clicked.emit)
         menu.addSeparator()
-        walk_action = menu.addAction("散步")
-        walk_action.triggered.connect(self._random_walk)
-        sit_action = menu.addAction("坐下")
-        sit_action.triggered.connect(lambda: self.set_pet_state(PetState.SIT))
-        sleep_action = menu.addAction("睡觉")
-        sleep_action.triggered.connect(lambda: self.set_pet_state(PetState.SLEEP))
-        wake_action = menu.addAction("醒来")
-        wake_action.triggered.connect(self.release_pet_state)
+        menu.addAction("散步", self._action_random_walk)
+        menu.addAction("转圈圈", self._action_spin)
+        menu.addAction("开心", self._action_happy)
+        menu.addAction("哭泣", self._action_cry)
+        menu.addSeparator()
+        menu.addAction("坐下", self._action_sit)
+        is_sleeping = self._behavior.state == PetState.SLEEP
+        if is_sleeping:
+            menu.addAction("醒来", self._action_wake)
+        else:
+            menu.addAction("睡觉", self._action_sleep)
         menu.exec(event.globalPos())
 
-    def _random_walk(self):
-        import random
-        rect = self._physics.available_rect()
-        target = random.randint(rect.left(), rect.right() - self._size)
-        self._behavior.start_walk_to(target, self.pos().x())
+    def _start_random_walk(self):
+        sl, st, sr, sb = self._physics.screen_bounds()
+        tx = random.randint(sl, sr)
+        ty = random.randint(st, sb)
+        self._behavior.start_walk_to(tx, ty, self.pos().x(), self.pos().y())
+
+    def _action_random_walk(self):
+        self.action_triggered.emit()
+        self._start_random_walk()
+
+    def _action_spin(self):
+        self.action_triggered.emit()
+        self._behavior._begin_spin()
+
+    def _action_happy(self):
+        self.action_triggered.emit()
+        self._behavior.trigger_emotion(PetState.HAPPY, 5.0)
+
+    def _action_cry(self):
+        self.action_triggered.emit()
+        self._behavior.trigger_emotion(PetState.CRY, 5.0)
+
+    def _action_sit(self):
+        self.action_triggered.emit()
+        self.set_pet_state(PetState.SIT)
+
+    def _action_sleep(self):
+        self.action_triggered.emit()
+        self.set_pet_state(PetState.SLEEP)
+
+    def _action_wake(self):
+        self.action_triggered.emit()
+        self.release_pet_state()

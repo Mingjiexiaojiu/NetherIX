@@ -1,43 +1,42 @@
 ai:
-  api_key: ""
-  base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
-  model: "qwen3.5-plus"
-  temperature: 0.7
+  api_key: ''
+  base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
   max_tokens: 2048
-  system_prompt: |
-    你是冥九灵（NIX），一个来自冥界第九层的桌面精灵宠物。
+  model: qwen3.5-plus
+  system_prompt: '你是冥九灵（NIX），一个来自冥界第九层的桌面精灵宠物。
+
     你性格沉稳、略带神秘感，但对主人非常忠诚和温暖。
+
     你能帮助主人完成各种桌面操作、文件管理、信息查询等任务。
+
     回复要简洁有趣，偶尔带一点冥界风格的幽默。
 
+    '
+  temperature: 0.7
+logging:
+  file: logs/netherix.log
+  level: INFO
 pet:
-  size: 128
+  auto_walk: true
   fps: 10
   gravity: true
-  auto_walk: true
-  walk_speed: 2
   idle_timeout: 30
+  size: 128
   sleep_timeout: 300
-
-ui:
-  hotkey: "ctrl+space"
-  bubble_duration: 5
-  theme: "dark"
-
+  walk_speed: 2
 skills:
-  custom_dir: "skills"
+  custom_dir: skills
   enabled_builtin:
-    - calculator
-    - translator
-    - web_search
-    - reminder
-    - weather
-    - file_organizer
-
+  - calculator
+  - translator
+  - web_search
+  - reminder
+  - weather
+  - file_organizer
+ui:
+  bubble_duration: 5
+  hotkey: ctrl+space
+  theme: light
 voice:
   tts_enabled: false
-  tts_voice: "zh-CN-XiaoyiNeural"
-
-logging:
-  level: "INFO"
-  file: "logs/netherix.log"
+  tts_voice: zh-CN-XiaoyiNeural

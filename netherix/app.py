@@ -26,7 +26,6 @@ from netherix.skills.builtin.reminder import ReminderSkill
 from netherix.skills.builtin.translator import TranslatorSkill
 from netherix.skills.skill_manager import SkillManager
 from netherix.ui.chat_bubble import ChatBubble
-from netherix.ui.input_box import FloatingInputBox
 from netherix.ui.settings_dialog import SettingsDialog
 from netherix.ui.tray import TrayManager
 from netherix.voice.tts_engine import TTSEngine
@@ -107,7 +106,6 @@ class NetherIXApp(QObject):
         self._bubble = ChatBubble(
             duration=self._config.get("ui", {}).get("bubble_duration", 5) * 1000,
         )
-        self._input_box = FloatingInputBox()
         self._tray = TrayManager()
 
     def _setup_voice(self):
@@ -127,15 +125,25 @@ class NetherIXApp(QObject):
             logger.warning("Failed to register hotkey: {}", e)
 
     def _on_hotkey_pressed(self):
-        QTimer.singleShot(0, self._input_box.toggle)
+        QTimer.singleShot(0, self._toggle_bubble_input)
+
+    def _pet_anchor(self) -> QPoint:
+        pos = self._pet.pos()
+        return QPoint(pos.x() + self._pet.width() // 2, pos.y())
+
+    def _toggle_bubble_input(self):
+        self._bubble.toggle_input(self._pet_anchor())
 
     def _connect_signals(self):
-        self._pet.double_clicked.connect(self._input_box.toggle)
-        self._input_box.message_submitted.connect(self._handle_user_message)
-        self._tray.show_input_requested.connect(self._input_box.toggle)
+        self._pet.double_clicked.connect(self._toggle_bubble_input)
+        self._bubble.message_submitted.connect(self._handle_user_message)
+        self._tray.show_input_requested.connect(self._toggle_bubble_input)
         self._tray.settings_requested.connect(self._show_settings)
         self._tray.quit_requested.connect(self._quit)
         self._reply_ready.connect(self._show_reply)
+
+        self._pet.position_changed.connect(self._bubble.follow)
+        self._pet.action_triggered.connect(self._bubble.hide)
 
         ReminderSkill.set_notify_callback(
             lambda msg: self._reply_ready.emit(msg)
@@ -144,7 +152,6 @@ class NetherIXApp(QObject):
     def start(self):
         self._pet.show()
         self._tray.show()
-        self._show_reply("冥九灵已苏醒... 随时为你效劳 ✨")
         logger.info("NetherIX started")
 
     @Slot(str)
@@ -264,12 +271,7 @@ class NetherIXApp(QObject):
     @Slot(str)
     def _show_reply(self, text: str):
         logger.info("NIX: {}", text)
-        pet_pos = self._pet.pos()
-        anchor = QPoint(
-            pet_pos.x() + self._pet.width() // 2,
-            pet_pos.y(),
-        )
-        self._bubble.show_message(text, anchor)
+        self._bubble.show_message(text, self._pet_anchor())
         self._pet.release_pet_state()
         if self._tts.enabled:
             self._tts.speak(text)
